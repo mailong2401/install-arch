@@ -54,6 +54,15 @@ def curses_menu(stdscr, title, options):
         elif key in [curses.KEY_ENTER, ord("\n")]:
             return options[current]
 
+def curses_input(stdscr, prompt):
+    curses.echo()
+    stdscr.clear()
+    stdscr.addstr(0, 0, prompt)
+    stdscr.refresh()
+    inp = stdscr.getstr(1, 0, 20).decode("utf-8")
+    curses.noecho()
+    return inp.strip()
+
 def main(stdscr):
     curses.start_color()
     curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
@@ -65,6 +74,12 @@ def main(stdscr):
     chosen_disk = curses_menu(stdscr, "Chọn Disk để cài đặt", disks)
     disk = chosen_disk.split()[0]  # chỉ lấy /dev/sdX
 
+    # ---- tạo user ----
+    make_user = curses_menu(stdscr, "Bạn có muốn tạo user không?", ["Có", "Không"])
+    username = None
+    if make_user == "Có":
+        username = curses_input(stdscr, "Nhập tên user: ")
+
     # ---- chọn kernel, driver, wm/de, bootloader ----
     kernel = curses_menu(stdscr, "Chọn Kernel", ["linux", "linux-lts", "linux-zen"])
     gpu = curses_menu(stdscr, "Chọn GPU Driver", ["intel", "amd", "nvidia"])
@@ -73,13 +88,17 @@ def main(stdscr):
 
     # ---- summary ----
     stdscr.clear()
-    stdscr.addstr(0, 0,
-        f"Disk: {disk}\nKernel: {kernel}\nGPU: {gpu}\nWM/DE: {wmde}\nBootloader: {bootloader}")
-    stdscr.addstr(7, 0, "Nhấn Enter để BẮT ĐẦU cài đặt (sẽ xoá toàn bộ dữ liệu trên disk!)")
+    summary = f"Disk: {disk}\nKernel: {kernel}\nGPU: {gpu}\nWM/DE: {wmde}\nBootloader: {bootloader}"
+    if username:
+        summary += f"\nUser: {username}"
+    else:
+        summary += "\nUser: root only"
+    stdscr.addstr(0, 0, summary)
+    stdscr.addstr(8, 0, "Nhấn Enter để BẮT ĐẦU cài đặt (sẽ xoá toàn bộ dữ liệu trên disk!)")
     stdscr.refresh()
     stdscr.getch()
 
-    # ---- auto partition (chỉ chạy khi nhấn Enter) ----
+    # ---- auto partition ----
     run(f"wipefs -a {disk}")
     run(f"sgdisk -Z {disk}")   # xóa GPT/MBR
     run(f"sgdisk -o {disk}")   # tạo bảng GPT mới
@@ -135,10 +154,11 @@ def main(stdscr):
         run("arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB")
         run("arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg")
 
-    username = "long"
-    run(f"arch-chroot /mnt useradd -m -G wheel -s /bin/bash {username}")
-    run(f"arch-chroot /mnt passwd {username}")
-    run("arch-chroot /mnt bash -c \"echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers\"")
+    # ---- create user ----
+    if username:
+        run(f"arch-chroot /mnt useradd -m -G wheel -s /bin/bash {username}")
+        run(f"arch-chroot /mnt passwd {username}")
+        run("arch-chroot /mnt bash -c \"echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers\"")
 
     stdscr.clear()
     stdscr.addstr(0, 0, f"✅ Cài đặt hoàn tất! Log ở {logfile}\nReboot để vào Arch.")
