@@ -14,13 +14,18 @@ logging.basicConfig(
 )
 
 def list_partitions(disk):
-    out = subprocess.check_output(f"lsblk -ln -o NAME,TYPE {disk}", shell=True, text=True)
+    # Lấy tên + loại + dung lượng partition
+    out = subprocess.check_output(f"lsblk -ln -o NAME,TYPE,SIZE {disk}", shell=True, text=True)
     parts = []
     for line in out.strip().split("\n"):
-        name, typ = line.split()
-        if typ == "part":
-            parts.append("/dev/" + name)
+        cols = line.split()
+        if cols[1] == "part":
+            # Trả về dạng hiển thị đẹp: "/dev/sda1 (512M)"
+            dev = f"/dev/{cols[0]}"
+            size = cols[2]
+            parts.append(f"{dev} ({size})")
     return parts
+
 
 
 def run(cmd):
