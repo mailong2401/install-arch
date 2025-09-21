@@ -28,7 +28,6 @@ def list_disks():
 
 # ---- UI helper ----
 def draw_summary(stdscr, config):
-    """Hiển thị config đã chọn bên phải"""
     h, w = stdscr.getmaxyx()
     x = w//2 + 2
     stdscr.attron(curses.color_pair(2))
@@ -50,7 +49,6 @@ def curses_menu(stdscr, title, options, config, keyname):
         stdscr.addstr(0, 2, f"[ {title} ]")
         stdscr.attroff(curses.color_pair(1))
 
-        # render options (bên trái)
         for idx, option in enumerate(options):
             x = 2
             y = h//2 - len(options)//2 + idx
@@ -61,7 +59,6 @@ def curses_menu(stdscr, title, options, config, keyname):
             else:
                 stdscr.addstr(y, x, f"  {option}")
 
-        # render summary (bên phải)
         draw_summary(stdscr, config)
 
         key = stdscr.getch()
@@ -109,21 +106,25 @@ def main(stdscr):
     disks = list_disks()
     if not disks:
         raise SystemExit("❌ Không tìm thấy disk nào!")
-    curses_menu(stdscr, "Chọn Disk để cài đặt", disks, config, "Disk")
+    chosen_disk = curses_menu(stdscr, "Chọn Disk để cài đặt", disks, config, "Disk")
+    chosen_disk = chosen_disk.split()[0]   # lấy /dev/sdX
 
     # --- user + password ---
     make_user = curses_menu(stdscr, "Tạo user?", ["Có", "Không"], config, "User?")
+    username = userpass = None
     if make_user == "Có":
-        curses_input(stdscr, "Nhập tên user:", config, "Username")
-        curses_input(stdscr, "Nhập password:", config, "Password", hidden=True)
+        username = curses_input(stdscr, "Nhập tên user:", config, "Username")
+        userpass = curses_input(stdscr, "Nhập password:", config, "Password", hidden=True)
     else:
         config["Username"] = "root only"
 
+    rootpass = curses_input(stdscr, "Nhập mật khẩu root:", config, "Root Password", hidden=True)
+
     # --- chọn kernel, gpu, wm/de, bootloader ---
-    curses_menu(stdscr, "Chọn Kernel", ["linux", "linux-lts", "linux-zen"], config, "Kernel")
-    curses_menu(stdscr, "Chọn GPU Driver", ["intel", "amd", "nvidia"], config, "GPU")
-    curses_menu(stdscr, "Chọn WM/DE", ["bspwm", "hyprland", "gnome", "kde"], config, "WM/DE")
-    curses_menu(stdscr, "Chọn Bootloader", ["systemd-boot", "grub"], config, "Bootloader")
+    kernel = curses_menu(stdscr, "Chọn Kernel", ["linux", "linux-lts", "linux-zen"], config, "Kernel")
+    gpu = curses_menu(stdscr, "Chọn GPU Driver", ["intel", "amd", "nvidia"], config, "GPU")
+    wmde = curses_menu(stdscr, "Chọn WM/DE", ["bspwm", "hyprland", "gnome", "kde"], config, "WM/DE")
+    bootloader = curses_menu(stdscr, "Chọn Bootloader", ["systemd-boot", "grub"], config, "Bootloader")
 
     # --- summary final ---
     stdscr.clear()
@@ -137,14 +138,14 @@ def main(stdscr):
     stdscr.getch()
 
     # ---- auto partition ----
-    run(f"wipefs -a {disks}")
-    run(f"sgdisk -Z {disks}")
-    run(f"sgdisk -o {disks}")
-    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {disks}")
-    run(f"sgdisk -n 2:0:0 -t 2:8300 {disks}")
+    run(f"wipefs -a {chosen_disk}")
+    run(f"sgdisk -Z {chosen_disk}")
+    run(f"sgdisk -o {chosen_disk}")
+    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {chosen_disk}")
+    run(f"sgdisk -n 2:0:0 -t 2:8300 {chosen_disk}")
 
-    efi_partition = f"{disks}1"
-    root_partition = f"{disks}2"
+    efi_partition = f"{chosen_disk}1"
+    root_partition = f"{chosen_disk}2"
 
     run(f"mkfs.fat -F32 {efi_partition}")
     run(f"mkfs.ext4 -F {root_partition}")
