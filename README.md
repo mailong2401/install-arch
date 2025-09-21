@@ -2,7 +2,6 @@ Got it 👍. I’ll rewrite your README into a cleaner, more polished version in
 
 ---
 
-````markdown
 # 🚀 Arch Linux Auto Installer (Curses Menu)
 
 A Python-based **Arch Linux auto installer** with a simple text-based UI powered by `curses`.  
@@ -34,7 +33,7 @@ git clone https://github.com/yourname/arch-auto-installer.git
 cd arch-auto-installer
 chmod +x installer.py
 python3 installer.py
-````
+```
 
 ---
 
@@ -159,11 +158,3 @@ Free to use, modify, and share.
 
 Created by **Mai Duong Long** – Arch Linux enthusiast & automation lover.
 Contributions and pull requests are welcome! 🚀
-
-```
-
----
-
-👉 Do you want me to also make a **short version** (just features + usage) for GitHub front page, and keep this **detailed one** as `docs/README.md`?
-```
-
