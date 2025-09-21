@@ -13,6 +13,16 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+def list_partitions(disk):
+    out = subprocess.check_output(f"lsblk -ln -o NAME,TYPE {disk}", shell=True, text=True)
+    parts = []
+    for line in out.strip().split("\n"):
+        name, typ = line.split()
+        if typ == "part":
+            parts.append("/dev/" + name)
+    return parts
+
+
 def run(cmd):
     """Run shell command and log it"""
     print(f"[RUN] {cmd}")
@@ -70,8 +80,11 @@ def main(stdscr):
     stdscr.getch()
 
     # ---- partition demo ----
-    root_partition = f"{args.disk}p2"
-    efi_partition = f"{args.disk}p1"
+
+    parts = list_partitions(args.disk)
+    efi_partition = curses_menu(stdscr, "Chọn EFI Partition", parts)
+    root_partition = curses_menu(stdscr, "Chọn Root Partition", parts)
+
 
     run(f"mkfs.ext4 {root_partition}")
     run(f"mkfs.fat -F32 {efi_partition}")
