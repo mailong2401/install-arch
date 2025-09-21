@@ -320,6 +320,102 @@ def get_available_locales():
     except:
         return ["en_US.UTF-8", "vi_VN.UTF-8", "C.UTF-8"]
 
+
+#install base
+def install_base_packages_curses(stdscr, kernel, gpu, wmde):
+    import curses, subprocess
+
+    # Build danh sách gói
+    pkgs = ["base", kernel, f"{kernel}-headers", "networkmanager", "sudo"]
+    if gpu == "nvidia":
+        pkgs += ["nvidia-dkms", "nvidia-utils", "nvidia-settings"]
+    elif gpu == "amd":
+        pkgs += ["xf86-video-amdgpu", "mesa", "vulkan-radeon"]
+    elif gpu == "intel":
+        pkgs += ["mesa", "vulkan-intel", "xf86-video-intel"]
+
+    if wmde == "bspwm":
+        pkgs += ["bspwm", "sxhkd", "alacritty", "polybar", "xorg", "xorg-xinit"]
+    elif wmde == "hyprland":
+        pkgs += ["hyprland", "waybar", "alacritty", "xdg-desktop-portal-hyprland"]
+    elif wmde == "gnome":
+        pkgs += ["gnome", "gdm"]
+    elif wmde == "kde":
+        pkgs += ["plasma", "sddm", "konsole"]
+
+    curses.start_color()
+    curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_RED, curses.COLOR_BLACK)
+
+    stdscr.clear()
+    stdscr.addstr("[STEP] Cài gói cơ bản...\n", curses.A_BOLD)
+    stdscr.refresh()
+
+    h, w = stdscr.getmaxyx()
+    left_col_w = 30
+    right_col_w = w - left_col_w - 2
+
+    # Vẽ cột phân cách
+    for i in range(h-1):
+        stdscr.addstr(i, left_col_w + 2, "│")
+    try:
+        stdscr.addstr(h-1, 0, "─" * (w-1))
+    except curses.error:
+        pass
+
+    # Hiển thị tên các gói cột trái
+    for i, pkg in enumerate(pkgs):
+        if i + 2 < h-1:
+            stdscr.addstr(i+2, 2, pkg[:left_col_w-2])
+    stdscr.refresh()
+
+    # Cài từng gói
+    for i, pkg in enumerate(pkgs):
+        if i + 2 >= h-1:
+            break
+
+        cmd = f"sudo pacman -S --needed --noconfirm --verbose {pkg}"
+        stdscr.addstr(i+2, left_col_w+4, " "*(right_col_w-4))
+        stdscr.addstr(i+2, left_col_w+4, "Đang bắt đầu...", curses.color_pair(1))
+        stdscr.refresh()
+
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+        # Thanh tiến trình giả
+        progress_width = 20
+        lines_seen = 0
+        for line in process.stdout:
+            line = line.strip()
+            lines_seen += 1
+            done = min(progress_width, lines_seen)
+            bar = "█"*done + " "*(progress_width-done)
+            percent = int(done/progress_width*100)
+            try:
+                stdscr.addstr(i+2, left_col_w+4, f"[{bar}] {percent}%".ljust(right_col_w-4), curses.color_pair(1))
+            except curses.error:
+                pass
+            stdscr.refresh()
+
+        process.wait()
+
+        # Trạng thái cuối cùng
+        if process.returncode == 0:
+            final_status = "Đã cài đặt thành công"
+            color = curses.color_pair(2)
+        else:
+            final_status = "Lỗi cài đặt"
+            color = curses.color_pair(3)
+        stdscr.addstr(i+2, left_col_w+4, " "*(right_col_w-4))
+        stdscr.addstr(i+2, left_col_w+4, final_status[:right_col_w-4], color)
+        stdscr.refresh()
+
+    msg = "Hoàn tất."
+    stdscr.addstr(h-1, 2, msg[:w-3])
+    stdscr.refresh()
+
+
+
 # ---- main ----
 def main(stdscr):
     curses.start_color()
@@ -429,25 +525,8 @@ def main(stdscr):
     optimize_mirrorlist()
 
     # ---- base install ----
-    pkgs = f"base {kernel} {kernel}-headers networkmanager sudo"
-    if gpu == "nvidia":
-        pkgs += " nvidia-dkms nvidia-utils nvidia-settings"
-    elif gpu == "amd":
-        pkgs += " xf86-video-amdgpu mesa vulkan-radeon"
-    elif gpu == "intel":
-        pkgs += " mesa vulkan-intel xf86-video-intel"
 
-    if wmde == "bspwm":
-        pkgs += " bspwm sxhkd alacritty polybar xorg xorg-xinit"
-    elif wmde == "hyprland":
-        pkgs += " hyprland waybar alacritty xdg-desktop-portal-hyprland"
-    elif wmde == "gnome":
-        pkgs += " gnome gdm"
-    elif wmde == "kde":
-        pkgs += " plasma sddm konsole"
-
-    run(f"pacstrap -K /mnt {pkgs}")
-    run("genfstab -U /mnt >> /mnt/etc/fstab")
+    curses.wrapper(install_base_packages_curses, kernel, gpu, wmde)
 
     # ---- Tạo swap file nếu được chọn ----
     if use_swap:
