@@ -180,16 +180,29 @@ LC_MONETARY={locale_conf['currency_format']}
     with open("/mnt/etc/locale.conf", "w") as f:
         f.write(locale_content)
     
-    # Tạo config cho người dùng
-    if locale_conf.get('username'):
-        user_home = f"/mnt/home/{locale_conf['username']}"
-        os.makedirs(user_home, exist_ok=True)
-        with open(f"{user_home}/.config/locale.conf", "w") as f:
-            f.write(locale_content)
-        run(f"arch-chroot /mnt chown {locale_conf['username']}:{locale_conf['username']} {user_home}/.config/locale.conf")
-    
     # Generate locales
     run("arch-chroot /mnt locale-gen")
+
+# ---- Tạo file locale cho user (sau khi user được tạo) ----
+def setup_user_locale(username, locale_conf):
+    if not username:
+        return
+        
+    # Tạo thư mục .config nếu chưa tồn tại
+    user_config_dir = f"/mnt/home/{username}/.config"
+    os.makedirs(user_config_dir, exist_ok=True)
+    
+    # Tạo file locale.conf cho user
+    locale_content = f"""LANG={locale_conf['lang']}
+LC_TIME={locale_conf['time_format']}
+LC_NUMERIC={locale_conf['number_format']}
+LC_MONETARY={locale_conf['currency_format']}
+"""
+    with open(f"{user_config_dir}/locale.conf", "w") as f:
+        f.write(locale_content)
+    
+    # Đặt quyền sở hữu
+    run(f"chown -R {username}:{username} {user_config_dir}")
 
 # ---- UI helper ----
 def draw_summary(stdscr, config):
@@ -363,9 +376,6 @@ def main(stdscr):
         locale_config['time_format'] = curses_input(stdscr, "Định dạng thời gian (LC_TIME):", config, "LC_TIME", default=main_locale)
         locale_config['number_format'] = curses_input(stdscr, "Định dạng số (LC_NUMERIC):", config, "LC_NUMERIC", default=main_locale)
         locale_config['currency_format'] = curses_input(stdscr, "Định dạng tiền tệ (LC_MONETARY):", config, "LC_MONETARY", default=main_locale)
-        
-        if username:
-            locale_config['username'] = username
     else:
         # Sử dụng mặc định
         locale_config = {
@@ -375,8 +385,6 @@ def main(stdscr):
             'number_format': 'en_US.UTF-8',
             'currency_format': 'en_US.UTF-8'
         }
-        if username:
-            locale_config['username'] = username
 
     # --- summary final ---
     stdscr.clear()
@@ -472,9 +480,8 @@ def main(stdscr):
         run(f"arch-chroot /mnt bash -c \"echo '{username}:{userpass}' | chpasswd\"")
         run("arch-chroot /mnt bash -c \"echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers\"")
 
-        # Tạo thư mục cấu hình cho user
-        run(f"arch-chroot /mnt mkdir -p /home/{username}/.config")
-        run(f"arch-chroot /mnt chown -R {username}:{username} /home/{username}")
+        # Tạo file locale cho user (sau khi user đã được tạo)
+        setup_user_locale(username, locale_config)
 
     stdscr.clear()
     stdscr.addstr(0, 0, f"✅ Cài đặt hoàn tất! Log ở {logfile}\nNhấn Enter để reboot hoặc ESC để không reboot.")
