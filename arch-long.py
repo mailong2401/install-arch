@@ -17,9 +17,11 @@ def run(cmd):
     print(f"[RUN] {cmd}")
     logging.info(f"Running: {cmd}")
     try:
-        subprocess.run(cmd, shell=True, check=True)
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        return result.stdout
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed: {cmd} - Error: {e}")
+        print(f"ERROR: {e.stderr}")
         raise
 
 def list_disks():
@@ -31,6 +33,33 @@ def list_disks():
             name, size = parts[0], parts[1]
             disks.append(f"/dev/{name} ({size})")
     return disks
+
+# ---- Kiểm tra disk có được mount không ----
+def is_disk_mounted(disk):
+    try:
+        result = subprocess.run(f"mount | grep {disk}", shell=True, capture_output=True, text=True)
+        return result.returncode == 0
+    except:
+        return False
+
+# ---- Unmount disk nếu cần ----
+def unmount_disk(disk):
+    # Kiểm tra các partition có được mount không
+    try:
+        result = subprocess.run(f"lsblk -ln -o MOUNTPOINTS {disk} | grep -v '^$'", shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            mount_points = result.stdout.strip().split('\n')
+            for mount_point in mount_points:
+                if mount_point:
+                    run(f"umount -f {mount_point}")
+    except:
+        pass
+    
+    # Thử unmount disk chính
+    try:
+        run(f"umount -f {disk}* 2>/dev/null || true")
+    except:
+        pass
 
 # ---- Kiểm tra UEFI ----
 def check_efi():
@@ -363,6 +392,12 @@ def main(stdscr):
     key = stdscr.getch()
     if key == 27:  # ESC key
         raise SystemExit("Hủy cài đặt")
+
+    # ---- Unmount disk trước khi thao tác ----
+    stdscr.clear()
+    stdscr.addstr(0, 0, "Đang unmount disk...")
+    stdscr.refresh()
+    unmount_disk(chosen_disk)
 
     # ---- auto partition ----
     run(f"wipefs -a {chosen_disk}")
