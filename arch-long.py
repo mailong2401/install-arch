@@ -13,35 +13,20 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-def list_partitions(disk):
-    out = subprocess.check_output(f"lsblk -ln -o NAME,TYPE,SIZE {disk}", shell=True, text=True)
-    parts = []
-    for line in out.strip().split("\n"):
-        cols = line.split()
-        if cols[1] == "part":
-            dev = f"/dev/{cols[0]}"
-            size = cols[2]
-            parts.append(f"{dev} ({size})")
-    return parts
-
-def choose_partition(stdscr, disk, label):
-    while True:
-        parts = list_partitions(disk)
-        parts.append("[Tạo phân vùng mới bằng cfdisk]")
-        choice = curses_menu(stdscr, f"Chọn {label} Partition", parts)
-
-        if choice.startswith("[Tạo"):
-            curses.endwin()
-            subprocess.run(f"cfdisk {disk}", shell=True)
-            stdscr.clear()
-            continue
-        else:
-            return choice.split()[0]
-
 def run(cmd):
     print(f"[RUN] {cmd}")
     logging.info(f"Running: {cmd}")
     subprocess.run(cmd, shell=True, check=True)
+
+def list_disks():
+    """Liệt kê các disk từ lsblk"""
+    out = subprocess.check_output("lsblk -d -n -o NAME,SIZE,TYPE", shell=True, text=True)
+    disks = []
+    for line in out.strip().split("\n"):
+        name, size, dtype = line.split()
+        if dtype == "disk":
+            disks.append(f"/dev/{name} ({size})")
+    return disks
 
 def curses_menu(stdscr, title, options):
     curses.curs_set(0)
@@ -74,42 +59,12 @@ def main(stdscr):
     curses.start_color()
     curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
 
-    parser = argparse.ArgumentParser(description="Mini Arch Installer")
-    parser.add_argument("--disk", default="/dev/nvme0n1", help="Target disk")
-    args, _ = parser.parse_known_args()
-
-    # ---- chọn mode cài đặt ----
-    install_mode = curses_menu(stdscr, "Chọn kiểu cài đặt", [
-        "Sử dụng phân vùng có sẵn (Mount)",
-        "Xóa toàn bộ đĩa và cài Arch mới (Wipe All)"
-    ])
-
-    # ---- phân vùng ----
-    if install_mode.startswith("Sử dụng"):
-        efi_partition = choose_partition(stdscr, args.disk, "EFI")
-        root_partition = choose_partition(stdscr, args.disk, "Root")
-
-    elif install_mode.startswith("Xóa"):
-        # WARNING: sẽ mất hết dữ liệu
-        run(f"wipefs -a {args.disk}")
-        run(f"sgdisk -Z {args.disk}")
-        run(f"sgdisk -o {args.disk}")
-
-        # Mở cfdisk để user tạo phân vùng mới
-        curses.endwin()
-        subprocess.run(f"cfdisk {args.disk}", shell=True)
-        stdscr.clear()
-
-        # Chọn EFI + Root sau khi tạo
-        efi_partition = choose_partition(stdscr, args.disk, "EFI")
-        root_partition = choose_partition(stdscr, args.disk, "Root")
-
-    # ---- format + mount ----
-    run(f"mkfs.fat -F32 {efi_partition}")
-    run(f"mkfs.ext4 {root_partition}")
-    run(f"mount {root_partition} /mnt")
-    run("mkdir -p /mnt/boot")
-    run(f"mount {efi_partition} /mnt/boot")
+    # ---- chọn disk ----
+    disks = list_disks()
+    if not disks:
+        raise SystemExit("❌ Không tìm thấy disk nào!")
+    chosen_disk = curses_menu(stdscr, "Chọn Disk để cài đặt", disks)
+    disk = chosen_disk.split()[0]  # chỉ lấy /dev/sdX
 
     # ---- chọn kernel, driver, wm/de, bootloader ----
     kernel = curses_menu(stdscr, "Chọn Kernel", ["linux", "linux-lts", "linux-zen"])
@@ -119,8 +74,9 @@ def main(stdscr):
 
     stdscr.clear()
     stdscr.addstr(0, 0,
-        f"Disk: {args.disk}\nMode: {install_mode}\nKernel: {kernel}\nGPU: {gpu}\nWM/DE: {wmde}\nBootloader: {bootloader}")
-    stdscr.addstr(7, 0, "Nhấn Enter để bắt đầu cài đặt...")
+        f"Disk: {disk}\nKernel: {kernel}\nGPU: {gpu}\nWM/DE: {wmde}\nBootloader: {bootloader}")
+    stdscr.addstr(7, 0, "⚠️ Lưu ý: bạn phải tự mount sẵn /mnt và /mnt/boot trước khi chạy script này.")
+    stdscr.addstr(9, 0, "Nhấn Enter để bắt đầu cài đặt...")
     stdscr.refresh()
     stdscr.getch()
 
@@ -173,7 +129,6 @@ def main(stdscr):
     stdscr.addstr(0, 0, f"✅ Cài đặt hoàn tất! Log ở {logfile}\nReboot để vào Arch.")
     stdscr.refresh()
     stdscr.getch()
-
 
 if __name__ == "__main__":
     curses.wrapper(main)
