@@ -28,8 +28,8 @@ Perfect for quickly getting a working Arch system up and running. ⚡
 Clone the repository and run the script:
 
 ```bash
-git clone https://github.com/yourname/arch-auto-installer.git
-cd arch-auto-installer
+git clone https://github.com/mailong2401/install-arch.git
+cd install-arch
 chmod +x installer.py
 python3 installer.py
 ```
