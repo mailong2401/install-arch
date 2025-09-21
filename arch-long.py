@@ -120,6 +120,48 @@ def setup_grub(root_partition):
     
     run("arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg")
 
+# ---- Cấu hình locale ----
+def setup_locale(locale_conf):
+    # Cấu hình locale.gen
+    locales_to_enable = [
+        "en_US.UTF-8 UTF-8",
+        "vi_VN.UTF-8 UTF-8",
+        locale_conf["locale"] + " UTF-8"
+    ]
+    
+    # Đảm bảo không trùng lặp
+    unique_locales = list(set(locales_to_enable))
+    
+    with open("/mnt/etc/locale.gen", "r") as f:
+        content = f.read()
+    
+    for locale in unique_locales:
+        # Bỏ comment trước locale nếu cần
+        content = content.replace(f"#{locale}", locale)
+    
+    with open("/mnt/etc/locale.gen", "w") as f:
+        f.write(content)
+    
+    # Tạo locale.conf
+    locale_content = f"""LANG={locale_conf['lang']}
+LC_TIME={locale_conf['time_format']}
+LC_NUMERIC={locale_conf['number_format']}
+LC_MONETARY={locale_conf['currency_format']}
+"""
+    with open("/mnt/etc/locale.conf", "w") as f:
+        f.write(locale_content)
+    
+    # Tạo config cho người dùng
+    if locale_conf.get('username'):
+        user_home = f"/mnt/home/{locale_conf['username']}"
+        os.makedirs(user_home, exist_ok=True)
+        with open(f"{user_home}/.config/locale.conf", "w") as f:
+            f.write(locale_content)
+        run(f"arch-chroot /mnt chown {locale_conf['username']}:{locale_conf['username']} {user_home}/.config/locale.conf")
+    
+    # Generate locales
+    run("arch-chroot /mnt locale-gen")
+
 # ---- UI helper ----
 def draw_summary(stdscr, config):
     h, w = stdscr.getmaxyx()
@@ -130,7 +172,12 @@ def draw_summary(stdscr, config):
     y = 2
     for key, value in config.items():
         if y < h-1:
-            stdscr.addstr(y, x, f"{key}: {value}")
+            # Hiển thị tối đa 2 dòng cho mỗi giá trị
+            if len(str(value)) > w - x - 10:
+                value_str = str(value)[:w - x - 13] + "..."
+            else:
+                value_str = str(value)
+            stdscr.addstr(y, x, f"{key}: {value_str}")
         y += 1
 
 def curses_menu(stdscr, title, options, config, keyname):
@@ -168,40 +215,66 @@ def curses_menu(stdscr, title, options, config, keyname):
         elif key == 27:  # ESC key
             raise SystemExit("Hủy cài đặt")
 
-def curses_input(stdscr, prompt, config, keyname, hidden=False):
-    curses.echo()
+def curses_input(stdscr, prompt, config, keyname, hidden=False, default=""):
+    curses.curs_set(1)  # Hiện con trỏ
     stdscr.clear()
     h, w = stdscr.getmaxyx()
     stdscr.addstr(0, 2, prompt)
+    if default:
+        stdscr.addstr(1, 2, f"(Mặc định: {default})")
+    
     stdscr.refresh()
     
-    if hidden:
-        curses.noecho()
-        inp = ""
-        while True:
-            ch = stdscr.getch()
-            if ch in [curses.KEY_ENTER, 10, 13]:
-                break
-            elif ch in [curses.KEY_BACKSPACE, 127]:
-                inp = inp[:-1]
-                stdscr.move(1, 2)
-                stdscr.clrtoeol()
-                stdscr.addstr(1, 2, "*" * len(inp))
-            elif ch == 27:  # ESC key
-                raise SystemExit("Hủy cài đặt")
-            else:
-                inp += chr(ch)
-                stdscr.addstr(1, 2, "*" * len(inp))
-            stdscr.refresh()
-    else:
-        curses.echo()
-        stdscr.addstr(1, 2, " " * 20)
-        stdscr.refresh()
-        inp = stdscr.getstr(1, 2, 20).decode("utf-8")
+    inp = default
+    cursor_pos = len(inp)
     
-    curses.noecho()
+    while True:
+        stdscr.move(2, 2)
+        stdscr.clrtobot()
+        if hidden:
+            stdscr.addstr(2, 2, "*" * len(inp))
+        else:
+            stdscr.addstr(2, 2, inp)
+        
+        # Hiển thị vị trí con trỏ
+        stdscr.move(2, 2 + cursor_pos)
+        stdscr.refresh()
+        
+        ch = stdscr.getch()
+        if ch in [curses.KEY_ENTER, 10, 13]:
+            break
+        elif ch in [curses.KEY_BACKSPACE, 127, 8]:
+            if cursor_pos > 0:
+                inp = inp[:cursor_pos-1] + inp[cursor_pos:]
+                cursor_pos -= 1
+        elif ch == curses.KEY_LEFT:
+            cursor_pos = max(0, cursor_pos - 1)
+        elif ch == curses.KEY_RIGHT:
+            cursor_pos = min(len(inp), cursor_pos + 1)
+        elif ch == 27:  # ESC key
+            raise SystemExit("Hủy cài đặt")
+        elif ch in [curses.KEY_HOME, 1]:  # Home key or Ctrl+A
+            cursor_pos = 0
+        elif ch in [curses.KEY_END, 5]:  # End key or Ctrl+E
+            cursor_pos = len(inp)
+        elif ch in [21, 11]:  # Ctrl+U or Ctrl+K
+            inp = ""
+            cursor_pos = 0
+        elif 32 <= ch <= 126:  # Ký tự có thể in được
+            inp = inp[:cursor_pos] + chr(ch) + inp[cursor_pos:]
+            cursor_pos += 1
+    
+    curses.curs_set(0)  # Ẩn con trỏ
     config[keyname] = inp.strip()
     return inp.strip()
+
+# ---- Lấy danh sách locale có sẵn ----
+def get_available_locales():
+    try:
+        result = subprocess.run("locale -a", shell=True, capture_output=True, text=True)
+        return result.stdout.strip().split('\n')
+    except:
+        return ["en_US.UTF-8", "vi_VN.UTF-8", "C.UTF-8"]
 
 # ---- main ----
 def main(stdscr):
@@ -245,6 +318,36 @@ def main(stdscr):
     # --- swap file ---
     swap_choice = curses_menu(stdscr, "Tạo swap file?", ["Có", "Không"], config, "Swap file")
     use_swap = (swap_choice == "Có")
+
+    # --- cấu hình locale ---
+    locale_config = {}
+    locale_choice = curses_menu(stdscr, "Cấu hình locale?", ["Có", "Không"], config, "Cấu hình locale?")
+    
+    if locale_choice == "Có":
+        # Chọn locale chính
+        available_locales = get_available_locales()
+        main_locale = curses_menu(stdscr, "Chọn locale chính", available_locales, config, "Locale chính")
+        
+        # Chọn các cài đặt locale cụ thể
+        locale_config['locale'] = main_locale
+        locale_config['lang'] = curses_input(stdscr, "Ngôn ngữ hệ thống (LANG):", config, "LANG", default=main_locale.split('.')[0])
+        locale_config['time_format'] = curses_input(stdscr, "Định dạng thời gian (LC_TIME):", config, "LC_TIME", default=main_locale)
+        locale_config['number_format'] = curses_input(stdscr, "Định dạng số (LC_NUMERIC):", config, "LC_NUMERIC", default=main_locale)
+        locale_config['currency_format'] = curses_input(stdscr, "Định dạng tiền tệ (LC_MONETARY):", config, "LC_MONETARY", default=main_locale)
+        
+        if username:
+            locale_config['username'] = username
+    else:
+        # Sử dụng mặc định
+        locale_config = {
+            'locale': 'en_US.UTF-8',
+            'lang': 'en_US.UTF-8',
+            'time_format': 'en_US.UTF-8',
+            'number_format': 'en_US.UTF-8',
+            'currency_format': 'en_US.UTF-8'
+        }
+        if username:
+            locale_config['username'] = username
 
     # --- summary final ---
     stdscr.clear()
@@ -305,15 +408,12 @@ def main(stdscr):
     if use_swap:
         setup_swapfile()
 
+    # ---- Cấu hình locale ----
+    setup_locale(locale_config)
+
     # ---- system config ----
     run("arch-chroot /mnt ln -sf /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime")
     run("arch-chroot /mnt hwclock --systohc")
-    
-    # Cấu hình locale
-    run("arch-chroot /mnt sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen")
-    run("arch-chroot /mnt sed -i 's/^#vi_VN.UTF-8/vi_VN.UTF-8/' /etc/locale.gen")
-    run("arch-chroot /mnt locale-gen")
-    run("arch-chroot /mnt bash -c 'echo \"LANG=en_US.UTF-8\" > /etc/locale.conf'")
     
     run("arch-chroot /mnt systemctl enable NetworkManager")
 
