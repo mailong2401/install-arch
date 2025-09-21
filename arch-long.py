@@ -183,26 +183,28 @@ LC_MONETARY={locale_conf['currency_format']}
     # Generate locales
     run("arch-chroot /mnt locale-gen")
 
+
 # ---- Tạo file locale cho user (sau khi user được tạo) ----
 def setup_user_locale(username, locale_conf):
     if not username:
         return
-        
-    # Tạo thư mục .config nếu chưa tồn tại
-    user_config_dir = f"/mnt/home/{username}/.config"
-    os.makedirs(user_config_dir, exist_ok=True)
-    
-    # Tạo file locale.conf cho user
+
+    # Tạo file locale.conf cho user trong chroot
     locale_content = f"""LANG={locale_conf['lang']}
 LC_TIME={locale_conf['time_format']}
 LC_NUMERIC={locale_conf['number_format']}
 LC_MONETARY={locale_conf['currency_format']}
 """
-    with open(f"{user_config_dir}/locale.conf", "w") as f:
+
+    temp_path = f"/mnt/home/{username}/.config"
+    os.makedirs(temp_path, exist_ok=True)
+    with open(f"{temp_path}/locale.conf", "w") as f:
         f.write(locale_content)
-    
-    # Đặt quyền sở hữu
-    run(f"chown -R {username}:{username} {user_config_dir}")
+
+    # Đảm bảo user sở hữu file này
+    run(f"arch-chroot /mnt chown -R {username}:{username} /home/{username}/.config")
+
+
 
 # ---- UI helper ----
 def draw_summary(stdscr, config):
