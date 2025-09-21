@@ -137,14 +137,14 @@ def main(stdscr):
     stdscr.getch()
 
     # ---- auto partition ----
-    run(f"wipefs -a {disk}")
-    run(f"sgdisk -Z {disk}")
-    run(f"sgdisk -o {disk}")
-    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {disk}")
-    run(f"sgdisk -n 2:0:0 -t 2:8300 {disk}")
+    run(f"wipefs -a {disks}")
+    run(f"sgdisk -Z {disks}")
+    run(f"sgdisk -o {disks}")
+    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {disks}")
+    run(f"sgdisk -n 2:0:0 -t 2:8300 {disks}")
 
-    efi_partition = f"{disk}1"
-    root_partition = f"{disk}2"
+    efi_partition = f"{disks}1"
+    root_partition = f"{disks}2"
 
     run(f"mkfs.fat -F32 {efi_partition}")
     run(f"mkfs.ext4 -F {root_partition}")
