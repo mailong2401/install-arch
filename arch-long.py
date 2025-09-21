@@ -84,6 +84,33 @@ def main(stdscr):
         "Xóa toàn bộ đĩa và cài Arch mới (Wipe All)"
     ])
 
+    # ---- phân vùng ----
+    if install_mode.startswith("Sử dụng"):
+        efi_partition = choose_partition(stdscr, args.disk, "EFI")
+        root_partition = choose_partition(stdscr, args.disk, "Root")
+
+    elif install_mode.startswith("Xóa"):
+        # WARNING: sẽ mất hết dữ liệu
+        run(f"wipefs -a {args.disk}")
+        run(f"sgdisk -Z {args.disk}")
+        run(f"sgdisk -o {args.disk}")
+
+        # Mở cfdisk để user tạo phân vùng mới
+        curses.endwin()
+        subprocess.run(f"cfdisk {args.disk}", shell=True)
+        stdscr.clear()
+
+        # Chọn EFI + Root sau khi tạo
+        efi_partition = choose_partition(stdscr, args.disk, "EFI")
+        root_partition = choose_partition(stdscr, args.disk, "Root")
+
+    # ---- format + mount ----
+    run(f"mkfs.fat -F32 {efi_partition}")
+    run(f"mkfs.ext4 {root_partition}")
+    run(f"mount {root_partition} /mnt")
+    run("mkdir -p /mnt/boot")
+    run(f"mount {efi_partition} /mnt/boot")
+
     # ---- chọn kernel, driver, wm/de, bootloader ----
     kernel = curses_menu(stdscr, "Chọn Kernel", ["linux", "linux-lts", "linux-zen"])
     gpu = curses_menu(stdscr, "Chọn GPU Driver", ["intel", "amd", "nvidia"])
@@ -96,34 +123,6 @@ def main(stdscr):
     stdscr.addstr(7, 0, "Nhấn Enter để bắt đầu cài đặt...")
     stdscr.refresh()
     stdscr.getch()
-
-    # ---- phân vùng ----
-    if install_mode.startswith("Sử dụng"):
-        efi_partition = choose_partition(stdscr, args.disk, "EFI")
-        root_partition = choose_partition(stdscr, args.disk, "Root")
-
-        run(f"mkfs.fat -F32 {efi_partition}")
-        run(f"mkfs.ext4 {root_partition}")
-        run(f"mount {root_partition} /mnt")
-        run("mkdir -p /mnt/boot")
-        run(f"mount {efi_partition} /mnt/boot")
-
-    elif install_mode.startswith("Xóa"):
-        # WARNING: sẽ mất hết dữ liệu
-        run(f"wipefs -a {args.disk}")
-        run(f"sgdisk -Z {args.disk}")
-        run(f"sgdisk -o {args.disk}")
-        run(f"sgdisk -n 1:0:+512M -t 1:ef00 {args.disk}")
-        run(f"sgdisk -n 2:0:0 -t 2:8300 {args.disk}")
-
-        efi_partition = f"{args.disk}1"
-        root_partition = f"{args.disk}2"
-
-        run(f"mkfs.fat -F32 {efi_partition}")
-        run(f"mkfs.ext4 {root_partition}")
-        run(f"mount {root_partition} /mnt")
-        run("mkdir -p /mnt/boot")
-        run(f"mount {efi_partition} /mnt/boot")
 
     # ---- base install ----
     pkgs = f"base {kernel} {kernel}-headers networkmanager nvim sudo"
