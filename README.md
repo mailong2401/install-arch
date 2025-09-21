@@ -1,4 +1,3 @@
-Got it 👍. I’ll rewrite your README into a cleaner, more polished version in **English**, keeping the same structure but improving flow and formatting:
 
 ---
 
