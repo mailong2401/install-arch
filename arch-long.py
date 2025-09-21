@@ -1,3 +1,75 @@
+#!/usr/bin/env python3
+import subprocess
+import argparse
+import curses
+import logging
+import os
+
+# ---- Logging setup ----
+logfile = os.path.expanduser("~/install.log")
+logging.basicConfig(
+    filename=logfile,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+def list_partitions(disk):
+    out = subprocess.check_output(f"lsblk -ln -o NAME,TYPE,SIZE {disk}", shell=True, text=True)
+    parts = []
+    for line in out.strip().split("\n"):
+        cols = line.split()
+        if cols[1] == "part":
+            dev = f"/dev/{cols[0]}"
+            size = cols[2]
+            parts.append(f"{dev} ({size})")
+    return parts
+
+def choose_partition(stdscr, disk, label):
+    while True:
+        parts = list_partitions(disk)
+        parts.append("[Tạo phân vùng mới bằng cfdisk]")
+        choice = curses_menu(stdscr, f"Chọn {label} Partition", parts)
+
+        if choice.startswith("[Tạo"):
+            curses.endwin()
+            subprocess.run(f"cfdisk {disk}", shell=True)
+            stdscr.clear()
+            continue
+        else:
+            return choice.split()[0]
+
+def run(cmd):
+    print(f"[RUN] {cmd}")
+    logging.info(f"Running: {cmd}")
+    subprocess.run(cmd, shell=True, check=True)
+
+def curses_menu(stdscr, title, options):
+    curses.curs_set(0)
+    h, w = stdscr.getmaxyx()
+    current = 0
+
+    while True:
+        stdscr.clear()
+        stdscr.addstr(0, w//2 - len(title)//2, title, curses.A_BOLD)
+
+        for idx, option in enumerate(options):
+            x = w//2 - len(option)//2
+            y = h//2 - len(options)//2 + idx
+            if idx == current:
+                stdscr.attron(curses.color_pair(1))
+                stdscr.addstr(y, x, option)
+                stdscr.attroff(curses.color_pair(1))
+            else:
+                stdscr.addstr(y, x, option)
+
+        key = stdscr.getch()
+        if key == curses.KEY_UP and current > 0:
+            current -= 1
+        elif key == curses.KEY_DOWN and current < len(options)-1:
+            current += 1
+        elif key in [curses.KEY_ENTER, ord("\n")]:
+            return options[current]
+
 def main(stdscr):
     curses.start_color()
     curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
@@ -102,4 +174,8 @@ def main(stdscr):
     stdscr.addstr(0, 0, f"✅ Cài đặt hoàn tất! Log ở {logfile}\nReboot để vào Arch.")
     stdscr.refresh()
     stdscr.getch()
+
+
+if __name__ == "__main__":
+    curses.wrapper(main)
 
