@@ -375,7 +375,7 @@ def install_base_packages_curses(stdscr, kernel, gpu, wmde):
         if i + 2 >= h-1:
             break
 
-        cmd = f"sudo pacman -S --needed --noconfirm --verbose {pkg}"
+        cmd = f"pacstrap -K /mnt {pkg}"
         stdscr.addstr(i+2, left_col_w+4, " "*(right_col_w-4))
         stdscr.addstr(i+2, left_col_w+4, "Đang bắt đầu...", curses.color_pair(1))
         stdscr.refresh()
