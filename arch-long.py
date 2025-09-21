@@ -136,8 +136,74 @@ def main(stdscr):
     stdscr.refresh()
     stdscr.getch()
 
-    # TODO: chạy auto partition + pacstrap như code trước
-    # (cái phần này mình giữ nguyên không thay đổi)
+    # ---- auto partition ----
+    run(f"wipefs -a {disk}")
+    run(f"sgdisk -Z {disk}")
+    run(f"sgdisk -o {disk}")
+    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {disk}")
+    run(f"sgdisk -n 2:0:0 -t 2:8300 {disk}")
+
+    efi_partition = f"{disk}1"
+    root_partition = f"{disk}2"
+
+    run(f"mkfs.fat -F32 {efi_partition}")
+    run(f"mkfs.ext4 -F {root_partition}")
+    run(f"mount {root_partition} /mnt")
+    run("mkdir -p /mnt/boot")
+    run(f"mount {efi_partition} /mnt/boot")
+
+    # ---- base install ----
+    pkgs = f"base {kernel} {kernel}-headers networkmanager nvim sudo"
+    if gpu == "nvidia":
+        pkgs += " nvidia-dkms nvidia-utils"
+    elif gpu == "amd":
+        pkgs += " xf86-video-amdgpu mesa"
+    elif gpu == "intel":
+        pkgs += " mesa xf86-video-intel"
+
+    if wmde == "bspwm":
+        pkgs += " bspwm sxhkd alacritty polybar"
+    elif wmde == "hyprland":
+        pkgs += " hyprland waybar alacritty"
+    elif wmde == "gnome":
+        pkgs += " gnome gdm"
+    elif wmde == "kde":
+        pkgs += " plasma sddm"
+
+    run(f"pacstrap -K /mnt {pkgs}")
+    run("genfstab -U /mnt >> /mnt/etc/fstab")
+
+    # ---- system config ----
+    run("arch-chroot /mnt ln -sf /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime")
+    run("arch-chroot /mnt hwclock --systohc")
+    run("arch-chroot /mnt locale-gen")
+    run("arch-chroot /mnt systemctl enable NetworkManager")
+
+    if wmde == "gnome":
+        run("arch-chroot /mnt systemctl enable gdm")
+    elif wmde == "kde":
+        run("arch-chroot /mnt systemctl enable sddm")
+
+    if bootloader == "systemd-boot":
+        run("arch-chroot /mnt bootctl install")
+    elif bootloader == "grub":
+        run("arch-chroot /mnt pacman -S --noconfirm grub efibootmgr")
+        run("arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB")
+        run("arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg")
+
+    # ---- set root password ----
+    run(f"arch-chroot /mnt bash -c \"echo 'root:{rootpass}' | chpasswd\"")
+
+    # ---- create user ----
+    if username:
+        run(f"arch-chroot /mnt useradd -m -G wheel -s /bin/bash {username}")
+        run(f"arch-chroot /mnt bash -c \"echo '{username}:{userpass}' | chpasswd\"")
+        run("arch-chroot /mnt bash -c \"echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers\"")
+
+    stdscr.clear()
+    stdscr.addstr(0, 0, f"✅ Cài đặt hoàn tất! Log ở {logfile}\nReboot để vào Arch.")
+    stdscr.refresh()
+    stdscr.getch()
 
 if __name__ == "__main__":
     curses.wrapper(main)
