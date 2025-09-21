@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import subprocess
-import argparse
 import curses
 import logging
 import os
@@ -72,13 +71,29 @@ def main(stdscr):
     wmde = curses_menu(stdscr, "Chọn WM/DE", ["bspwm", "hyprland", "gnome", "kde"])
     bootloader = curses_menu(stdscr, "Chọn Bootloader", ["systemd-boot", "grub"])
 
+    # ---- summary ----
     stdscr.clear()
     stdscr.addstr(0, 0,
         f"Disk: {disk}\nKernel: {kernel}\nGPU: {gpu}\nWM/DE: {wmde}\nBootloader: {bootloader}")
-    stdscr.addstr(7, 0, "⚠️ Lưu ý: bạn phải tự mount sẵn /mnt và /mnt/boot trước khi chạy script này.")
-    stdscr.addstr(9, 0, "Nhấn Enter để bắt đầu cài đặt...")
+    stdscr.addstr(7, 0, "Nhấn Enter để BẮT ĐẦU cài đặt (sẽ xoá toàn bộ dữ liệu trên disk!)")
     stdscr.refresh()
     stdscr.getch()
+
+    # ---- auto partition (chỉ chạy khi nhấn Enter) ----
+    run(f"wipefs -a {disk}")
+    run(f"sgdisk -Z {disk}")   # xóa GPT/MBR
+    run(f"sgdisk -o {disk}")   # tạo bảng GPT mới
+    run(f"sgdisk -n 1:0:+1G -t 1:ef00 {disk}")   # EFI 1G
+    run(f"sgdisk -n 2:0:0 -t 2:8300 {disk}")     # Root còn lại
+
+    efi_partition = f"{disk}1"
+    root_partition = f"{disk}2"
+
+    run(f"mkfs.fat -F32 {efi_partition}")
+    run(f"mkfs.ext4 -F {root_partition}")
+    run(f"mount {root_partition} /mnt")
+    run("mkdir -p /mnt/boot")
+    run(f"mount {efi_partition} /mnt/boot")
 
     # ---- base install ----
     pkgs = f"base {kernel} {kernel}-headers networkmanager nvim sudo"
